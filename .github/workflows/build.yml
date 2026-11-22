@@ -20,7 +20,6 @@ jobs:
           export ARCH=arm64
           ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KCFLAGS=-Wno-error"
           make $ARGS vendor/${{ github.event.inputs.defconfig }}
-          scripts/config --file out/.config --set-str LOCALVERSION "-Snuzzle-Nugget" --disable LOCALVERSION_AUTO
           make $ARGS olddefconfig
           make $ARGS -j$(nproc) 2>&1 | tee build.log
           grep -m1 "UTS_RELEASE" out/include/generated/utsrelease.h | tee -a build.log
