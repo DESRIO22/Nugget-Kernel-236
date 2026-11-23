@@ -8,45 +8,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
-      - name: Free disk + add swap
+      - name: Find flag
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo swapoff -a
-          sudo fallocate -l 12G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
-          free -h; df -h
-
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio python-is-python3 \
-            clang-14 lld-14 llvm-14 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
-
-      - name: Build
-        run: |
-          set -eo pipefail
-          export ARCH=arm64
-          ARGS="O=out ARCH=arm64 CC=clang-14 LD=ld.lld-14 AR=llvm-ar-14 NM=llvm-nm-14 OBJCOPY=llvm-objcopy-14 OBJDUMP=llvm-objdump-14 STRIP=llvm-strip-14 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KCFLAGS=-Wno-error"
-          DEF=arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}
-          sed -i '/CONFIG_LITTLE_CPU_MASK/d;/CONFIG_BIG_CPU_MASK/d' "$DEF"
-          printf 'CONFIG_LITTLE_CPU_MASK=15\nCONFIG_BIG_CPU_MASK=240\n' >> "$DEF"
-          make $ARGS vendor/${{ github.event.inputs.defconfig }}
-          scripts/config --file out/.config -d LTO_CLANG -e LTO_NONE
-          make $ARGS olddefconfig
-          make $ARGS -j4 < /dev/null 2>&1 | tee build.log | tail -n 40
-          test -f out/arch/arm64/boot/Image
-          grep -m1 "UTS_RELEASE" out/include/generated/utsrelease.h | tee -a build.log
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: kernel-out
-          path: |
-            out/arch/arm64/boot/Image*
-            out/arch/arm64/boot/dts/vendor/qcom/*.dtb
+          grep -rn "warn-stack-size" . --include="Makefile*" --include="*.mk" --include="Kbuild" --include="*.sh" --include="*.py" 2>/dev/null | head -20 || true
+          echo "=== README toolchain ==="
+          grep -rniE "clang|toolchain|proton|neutron|aosp" README* 2>/dev/null | head -20 || true
+          echo "=== vdso makefile ==="
+          sed -n 55,75p arch/arm64/kernel/vdso/Makefile
+          exit 1
