@@ -40,8 +40,8 @@ jobs:
           make $ARGS vendor/${{ github.event.inputs.defconfig }}
           scripts/config --file out/.config -d LTO_CLANG -e LTO_NONE -e STUNE_ASSIST
           make $ARGS olddefconfig
-          grep -n "STUNE_ASSIST" out/.config || echo "STUNE_ASSIST NOT SET"
-          make $ARGS -j4 < /dev/null 2>&1 | tee build.log | tail -n 60
+          make $ARGS -j4 < /dev/null > build.log 2>&1 || { grep -n -B3 -A6 "error:\|Error 1\|\*\*\*" build.log | head -80; exit 1; }
+          tail -n 5 build.log
           test -f out/arch/arm64/boot/Image
           grep -m1 "UTS_RELEASE" out/include/generated/utsrelease.h | tee -a build.log
 
