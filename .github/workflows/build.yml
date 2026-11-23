@@ -8,35 +8,99 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          filter: blob:none
 
-      - name: Compare sources
+      - name: Free disk + add swap
         run: |
-          echo "##### MY REPO #####"
-          git log -1 --format='%h %cd %s'
-          echo "--- inline crypto files:"
-          git ls-tree -r HEAD --name-only | grep -iE "crypto-qti|blk-crypto|keyslot-manager|dm-default-key" || echo "NONE"
-          echo "--- commits mentioning kamorta/qssi:"
-          git log --oneline | grep -iE "kamorta|qssi|LA\.UM\.9\.15" | head -15 || true
-          echo "--- 4.19.x version bumps:"
-          git log --oneline | grep -E "Linux 4\.19\.[0-9]+$" | head -5 || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo swapoff -a
+          sudo fallocate -l 12G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h; df -h
 
-          echo
-          echo "##### JAVASHIN #####"
-          git clone --filter=blob:none --no-checkout https://github.com/javashin/Xiaomi-Fury-Bengal-SD662 moon
-          cd moon
-          echo "--- branches:"
-          git branch -r
-          for b in $(git branch -r | grep -v HEAD | sed 's/ //g' | head -8); do
-            echo "=== $b"
-            git log -1 --format='%h %cd %s' $b
-            git ls-tree -r $b --name-only | grep -iE "crypto-qti|blk-crypto|keyslot-manager|dm-default-key" | head -4 || echo "NONE"
-            git log $b --oneline | grep -iE "kamorta|qssi" | head -3 || true
-            git log $b --oneline | grep -E "Linux 4\.19\.[0-9]+$" | head -2 || true
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio python-is-python3 zip curl \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi device-tree-compiler
+
+      - name: Fetch AOSP clang r450784b
+        run: |
+          set -eo pipefail
+          mkdir -p "$HOME/clang" && cd "$HOME/clang"
+          curl -fL --retry 3 -o clang.tgz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/ab73cd180863dbd17fdb8f20e39b33ab38030cf9/clang-r450784b.tar.gz"
+          tar xzf clang.tgz
+          rm clang.tgz
+          ./bin/clang --version
+
+      - name: Build
+        run: |
+          set -eo pipefail
+          export PATH="$HOME/clang/bin:$PATH"
+          export ARCH=arm64
+          export KCFLAGS="-Wno-error -Wno-error=incompatible-function-pointer-types -Wno-incompatible-function-pointer-types"
+          test -f prebuilt/dtbo.img || { echo "prebuilt/dtbo.img NOT FOUND"; exit 1; }
+          ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- DTC_FLAGS=-f"
+          DEF=arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}
+          sed -i '/CONFIG_LITTLE_CPU_MASK/d;/CONFIG_BIG_CPU_MASK/d' "$DEF"
+          printf 'CONFIG_LITTLE_CPU_MASK=0\nCONFIG_BIG_CPU_MASK=0\n' >> "$DEF"
+          sed -i '/-plugin-opt=-warn-stack-size/d' Makefile
+          make $ARGS vendor/${{ github.event.inputs.defconfig }}
+          scripts/config --file out/.config -d LTO_CLANG -e LTO_NONE -e STUNE_ASSIST \
+            -d CRYPTO_DEV_QCOM_ICE \
+            -e BLK_INLINE_ENCRYPTION -e BLK_INLINE_ENCRYPTION_FALLBACK -e FS_ENCRYPTION_INLINE_CRYPT \
+            -e SCSI_UFS_CRYPTO -e SCSI_UFS_CRYPTO_QTI -e MMC_CQHCI_CRYPTO -e MMC_CQHCI_CRYPTO_QTI \
+            -e QTI_CRYPTO_COMMON -e QTI_CRYPTO_TZ -e DM_DEFAULT_KEY \
+            -e FS_VERITY -e FS_VERITY_BUILTIN_SIGNATURES
+          make $ARGS olddefconfig
+          for s in BLK_INLINE_ENCRYPTION BLK_INLINE_ENCRYPTION_FALLBACK FS_ENCRYPTION_INLINE_CRYPT SCSI_UFS_CRYPTO SCSI_UFS_CRYPTO_QTI MMC_CQHCI_CRYPTO MMC_CQHCI_CRYPTO_QTI QTI_CRYPTO_COMMON QTI_CRYPTO_TZ DM_DEFAULT_KEY FS_VERITY FS_VERITY_BUILTIN_SIGNATURES; do
+            grep -q "^CONFIG_$s=y" out/.config && echo "OK      $s" || echo "MISSING $s"
           done
-          exit 1
+          grep -n "CRYPTO_DEV_QCOM_ICE" out/.config || true
+          if [ -f prebuilt/moonbase.config ]; then
+            norm() { grep -E '^(CONFIG_|# CONFIG_)' "$1" | sed -E 's/^# (CONFIG_[A-Za-z0-9_]+) is not set/\1=n/' | sort; }
+            norm out/.config > /tmp/mine.norm
+            norm prebuilt/moonbase.config > /tmp/moon.norm
+            diff /tmp/moon.norm /tmp/mine.norm > config-diff.txt || true
+            wc -l config-diff.txt
+          fi
+          make $ARGS -j4 -k < /dev/null > build.log 2>&1 || true
+          grep -n -B2 -A4 "error:\|ERROR:" build.log | head -80 || true
+          tail -n 5 build.log
+          ls -l out/arch/arm64/boot/ || true
+          test -f out/arch/arm64/boot/Image.gz
+          grep -m1 "UTS_RELEASE" out/include/generated/utsrelease.h | tee -a build.log
+
+      - name: Package AnyKernel3
+        run: |
+          set -eo pipefail
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
+          cd ak3
+          rm -rf .git .github README.md
+          cp ../out/arch/arm64/boot/Image.gz .
+          cp ../prebuilt/dtbo.img .
+          sed -i 's|^kernel.string=.*|kernel.string=Nugget-Kernel-236|' anykernel.sh
+          sed -i 's|^device.name1=.*|device.name1=citrus|' anykernel.sh
+          sed -i 's|^device.name2=.*|device.name2=lime|' anykernel.sh
+          sed -i 's|^device.name3=.*|device.name3=lemon|' anykernel.sh
+          sed -i 's|^device.name4=.*|device.name4=pomelo|' anykernel.sh
+          sed -i 's|^device.name5=.*|device.name5=juice|' anykernel.sh
+          sed -i 's|^block=.*|block=/dev/block/bootdevice/by-name/boot;|' anykernel.sh
+          sed -i 's|^is_slot_device=.*|is_slot_device=0;|' anykernel.sh
+          grep -nE "^(kernel.string|device.name|block|is_slot_device|do\.)" anykernel.sh
+          zip -r9 ../Nugget-Kernel-citrus.zip . -x "*placeholder"
+          ls -lh ../Nugget-Kernel-citrus.zip ../out/arch/arm64/boot/Image.gz
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kernel-out
+          path: |
+            Nugget-Kernel-citrus.zip
+            config-diff.txt
+            out/arch/arm64/boot/Image*
+            build.log
