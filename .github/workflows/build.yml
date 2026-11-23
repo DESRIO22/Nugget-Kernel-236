@@ -36,6 +36,8 @@ jobs:
           DEF=arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}
           sed -i '/CONFIG_LITTLE_CPU_MASK/d;/CONFIG_BIG_CPU_MASK/d' "$DEF"
           printf 'CONFIG_LITTLE_CPU_MASK=15\nCONFIG_BIG_CPU_MASK=240\n' >> "$DEF"
+          grep -rl "warn-stack-size" --include="Makefile*" --include="*.mk" . | xargs -r sed -i 's/-plugin-opt=-warn-stack-size=[0-9]*//g'
+          grep -rn "warn-stack-size" . --include="Makefile*" --include="*.mk" --include="Kbuild" | head || true
           make $ARGS vendor/${{ github.event.inputs.defconfig }}
           scripts/config --file out/.config -d LTO_CLANG -e LTO_NONE
           make $ARGS olddefconfig
