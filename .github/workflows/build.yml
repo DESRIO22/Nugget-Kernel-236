@@ -33,9 +33,11 @@ jobs:
           export ARCH=arm64
           ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KCFLAGS=-Wno-error"
           make $ARGS vendor/${{ github.event.inputs.defconfig }}
-          scripts/config --file out/.config -d LTO_CLANG -e LTO_NONE
-          make $ARGS olddefconfig
-          yes "" | make $ARGS -j4 2>&1 | tee build.log
+          scripts/config --file out/.config -d LTO_CLANG -e LTO_NONE \
+            -e ARM64_4K_PAGES -e ARM64_VA_BITS_39 \
+            --set-str LITTLE_CPU_MASK 0x0f --set-str BIG_CPU_MASK 0xf0
+          make $ARGS olddefconfig </dev/null
+          make $ARGS -j4 </dev/null 2>&1 | tee build.log
           grep -m1 "UTS_RELEASE" out/include/generated/utsrelease.h | tee -a build.log
 
       - uses: actions/upload-artifact@v4
