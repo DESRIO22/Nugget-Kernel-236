@@ -32,15 +32,15 @@ jobs:
         run: |
           set -eo pipefail
           export ARCH=arm64
-          ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KCFLAGS=-Wno-error"
+          ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KCFLAGS=\"-Wno-error -Wno-incompatible-function-pointer-types -Wno-implicit-function-declaration -Wno-int-conversion -Wno-implicit-int -Wno-strict-prototypes -Wno-unused-but-set-variable\""
           DEF=arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}
           sed -i '/CONFIG_LITTLE_CPU_MASK/d;/CONFIG_BIG_CPU_MASK/d' "$DEF"
           printf 'CONFIG_LITTLE_CPU_MASK=15\nCONFIG_BIG_CPU_MASK=240\n' >> "$DEF"
           sed -i '/-plugin-opt=-warn-stack-size/d' Makefile
-          make $ARGS vendor/${{ github.event.inputs.defconfig }}
+          eval make $ARGS vendor/${{ github.event.inputs.defconfig }}
           scripts/config --file out/.config -d LTO_CLANG -e LTO_NONE -e STUNE_ASSIST
-          make $ARGS olddefconfig
-          make $ARGS -j4 < /dev/null > build.log 2>&1 || { grep -n -B3 -A6 "error:\|Error 1\|\*\*\*" build.log | head -80; exit 1; }
+          eval make $ARGS olddefconfig
+          eval make $ARGS -j4 < /dev/null > build.log 2>&1 || { grep -n -B3 -A6 "error:\|Error 1\|\*\*\*" build.log | head -80; exit 1; }
           tail -n 5 build.log
           test -f out/arch/arm64/boot/Image
           grep -m1 "UTS_RELEASE" out/include/generated/utsrelease.h | tee -a build.log
