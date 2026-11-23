@@ -26,18 +26,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio python-is-python3 \
-            clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+            clang-14 lld-14 llvm-14 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
       - name: Build
         run: |
           set -eo pipefail
           export ARCH=arm64
-          ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KCFLAGS=-Wno-error"
+          ARGS="O=out ARCH=arm64 CC=clang-14 LD=ld.lld-14 AR=llvm-ar-14 NM=llvm-nm-14 OBJCOPY=llvm-objcopy-14 OBJDUMP=llvm-objdump-14 STRIP=llvm-strip-14 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KCFLAGS=-Wno-error"
           DEF=arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}
           sed -i '/CONFIG_LITTLE_CPU_MASK/d;/CONFIG_BIG_CPU_MASK/d' "$DEF"
           printf 'CONFIG_LITTLE_CPU_MASK=15\nCONFIG_BIG_CPU_MASK=240\n' >> "$DEF"
-          grep -rl "warn-stack-size" --include="Makefile*" --include="*.mk" . | xargs -r sed -i 's/-plugin-opt=-warn-stack-size=[0-9]*//g'
-          grep -rn "warn-stack-size" . --include="Makefile*" --include="*.mk" --include="Kbuild" | head || true
           make $ARGS vendor/${{ github.event.inputs.defconfig }}
           scripts/config --file out/.config -d LTO_CLANG -e LTO_NONE
           make $ARGS olddefconfig
