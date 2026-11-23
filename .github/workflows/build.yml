@@ -80,6 +80,8 @@ jobs:
           set -eo pipefail
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
           cd ak3
+          echo "--- template vars (original):"
+          grep -niE "^(block|is_slot_device|ramdisk_compression|patch_vbmeta_flag)=" anykernel.sh || true
           rm -rf .git .github README.md anykernel.sh
           cp ../out/arch/arm64/boot/Image.gz .
           cp ../prebuilt/dtbo.img .
@@ -103,7 +105,11 @@ jobs:
           supported.patchlevels=
           '; } # end properties
 
-          # shell variables
+          # shell variables (both cases: new and old AnyKernel3 core)
+          BLOCK=/dev/block/bootdevice/by-name/boot;
+          IS_SLOT_DEVICE=0;
+          RAMDISK_COMPRESSION=auto;
+          PATCH_VBMETA_FLAG=auto;
           block=/dev/block/bootdevice/by-name/boot;
           is_slot_device=0;
           ramdisk_compression=auto;
@@ -119,10 +125,12 @@ jobs:
 
           dump_boot;
           write_boot;
-          flash_generic dtbo;
           EOF
           grep -q "omap" anykernel.sh && { echo "omap path still in anykernel.sh"; exit 1; } || true
-          grep -nE "^(block|is_slot_device|device.name|kernel.string)" anykernel.sh
+          grep -q "^BLOCK=/dev/block/bootdevice/by-name/boot;" anykernel.sh || { echo "BLOCK missing"; exit 1; }
+          grep -nE "^(BLOCK|block|IS_SLOT_DEVICE|device.name|kernel.string)" anykernel.sh
+          echo "--- core uses:"
+          grep -nE 'BLOCK|\$block' tools/ak3-core.sh | head -8 || true
           zip -r9 ../Nugget-Kernel-citrus.zip . -x "*placeholder"
           unzip -l ../Nugget-Kernel-citrus.zip | grep -E "Image.gz|dtbo.img|anykernel.sh|ak3-core"
           ls -lh ../Nugget-Kernel-citrus.zip
