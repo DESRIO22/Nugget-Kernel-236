@@ -25,7 +25,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio python-is-python3 \
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio python-is-python3 zip \
             clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
       - name: Build
@@ -44,12 +44,33 @@ jobs:
           grep -n -B2 -A4 "error:\|ERROR:" build.log | head -80 || true
           tail -n 5 build.log
           test -f out/arch/arm64/boot/Image
+          test -f out/arch/arm64/boot/Image.gz
           grep -m1 "UTS_RELEASE" out/include/generated/utsrelease.h | tee -a build.log
+
+      - name: Package AnyKernel3
+        run: |
+          set -eo pipefail
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
+          cd ak3
+          rm -rf .git .github README.md
+          cp ../out/arch/arm64/boot/Image.gz .
+          sed -i 's|^kernel.string=.*|kernel.string=Nugget-Kernel-236|' anykernel.sh
+          sed -i 's|^device.name1=.*|device.name1=citrus|' anykernel.sh
+          sed -i 's|^device.name2=.*|device.name2=lime|' anykernel.sh
+          sed -i 's|^device.name3=.*|device.name3=|' anykernel.sh
+          sed -i 's|^device.name4=.*|device.name4=|' anykernel.sh
+          sed -i 's|^device.name5=.*|device.name5=|' anykernel.sh
+          sed -i 's|^block=.*|block=/dev/block/bootdevice/by-name/boot;|' anykernel.sh
+          sed -i 's|^BLOCK=.*|BLOCK=/dev/block/bootdevice/by-name/boot;|' anykernel.sh
+          grep -nE "^(kernel.string|device.name|block|BLOCK|do\.|is_slot_device|IS_SLOT_DEVICE)" anykernel.sh
+          zip -r9 ../Nugget-Kernel-citrus.zip . -x "*placeholder"
+          ls -lh ../Nugget-Kernel-citrus.zip
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: kernel-out
           path: |
+            Nugget-Kernel-citrus.zip
             out/arch/arm64/boot/Image*
             out/arch/arm64/boot/dts/vendor/qcom/*.dtb
