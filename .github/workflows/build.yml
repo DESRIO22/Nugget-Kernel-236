@@ -12,16 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Find wrappers
+      - name: Check
         run: |
-          echo "=== usages ==="
-          grep -n "boost_write_wrapper\|prefer_idle_write_wrapper" kernel/sched/tune.c || true
-          echo "=== ifdefs ==="
-          grep -n "^#if\|^#endif\|^#else" kernel/sched/tune.c | head -60
-          echo "=== defconfig ==="
-          grep -n "SCHED_TUNE\|STUNE\|SCHEDTUNE" arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }} || true
-          echo "=== tune.c 575-600 ==="
-          sed -n 575,600p kernel/sched/tune.c
-          echo "=== tune.c 745-765 ==="
-          sed -n 745,765p kernel/sched/tune.c
-          exit 1
+          echo "=== STUNE_ASSIST refs ==="
+          grep -rn "STUNE_ASSIST" --include="Kconfig*" --include="*defconfig" --include="*.c" --include="*.h" . | head -20 || true
+          echo "=== boost_write refs ==="
+          grep -n "boost_write" kernel/sched/tune.c || true
+          echo "=== tune.c 783-833 ==="
+          sed -n 783,833p kernel/sched/tune.c
+          echo "=== tune.c 715-
