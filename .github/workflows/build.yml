@@ -25,26 +25,38 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio python-is-python3 zip \
-            clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio python-is-python3 zip curl \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi device-tree-compiler
+
+      - name: Fetch AOSP clang r450784b
+        run: |
+          set -eo pipefail
+          mkdir -p "$HOME/clang" && cd "$HOME/clang"
+          curl -fL --retry 3 -o clang.tgz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/ab73cd180863dbd17fdb8f20e39b33ab38030cf9/clang-r450784b.tar.gz"
+          tar xzf clang.tgz
+          rm clang.tgz
+          ./bin/clang --version
+          ./bin/ld.lld --version
 
       - name: Build
         run: |
           set -eo pipefail
+          export PATH="$HOME/clang/bin:$PATH"
           export ARCH=arm64
-          ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- DTC_FLAGS=-f KCFLAGS=\"-Wno-error -Wno-incompatible-function-pointer-types -Wno-implicit-function-declaration -Wno-int-conversion -Wno-implicit-int -Wno-strict-prototypes -Wno-unused-but-set-variable\""
+          test -f prebuilt/dtbo.img || { echo "prebuilt/dtbo.img NOT FOUND, upload it to the repo"; exit 1; }
+          ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- DTC_FLAGS=-f KCFLAGS=-Wno-error"
           DEF=arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}
           sed -i '/CONFIG_LITTLE_CPU_MASK/d;/CONFIG_BIG_CPU_MASK/d' "$DEF"
           printf 'CONFIG_LITTLE_CPU_MASK=15\nCONFIG_BIG_CPU_MASK=240\n' >> "$DEF"
-          sed -i '/-plugin-opt=-warn-stack-size/d' Makefile
-          eval make $ARGS vendor/${{ github.event.inputs.defconfig }}
+          make $ARGS vendor/${{ github.event.inputs.defconfig }}
           scripts/config --file out/.config -d LTO_CLANG -e LTO_NONE -e STUNE_ASSIST
-          eval make $ARGS olddefconfig
-          eval make $ARGS -j4 -k < /dev/null > build.log 2>&1 || true
+          make $ARGS olddefconfig
+          grep -n "APPENDED_DTB\|STUNE_ASSIST\|LTO" out/.config || true
+          make $ARGS -j4 -k < /dev/null > build.log 2>&1 || true
           grep -n -B2 -A4 "error:\|ERROR:" build.log | head -80 || true
           tail -n 5 build.log
-          test -f out/arch/arm64/boot/Image
-          test -f out/arch/arm64/boot/Image.gz
+          ls -l out/arch/arm64/boot/ || true
+          test -f out/arch/arm64/boot/Image.gz-dtb
           grep -m1 "UTS_RELEASE" out/include/generated/utsrelease.h | tee -a build.log
 
       - name: Package AnyKernel3
@@ -53,18 +65,19 @@ jobs:
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
           cd ak3
           rm -rf .git .github README.md
-          cp ../out/arch/arm64/boot/Image.gz .
+          cp ../out/arch/arm64/boot/Image.gz-dtb .
+          cp ../prebuilt/dtbo.img .
           sed -i 's|^kernel.string=.*|kernel.string=Nugget-Kernel-236|' anykernel.sh
           sed -i 's|^device.name1=.*|device.name1=citrus|' anykernel.sh
           sed -i 's|^device.name2=.*|device.name2=lime|' anykernel.sh
-          sed -i 's|^device.name3=.*|device.name3=|' anykernel.sh
-          sed -i 's|^device.name4=.*|device.name4=|' anykernel.sh
-          sed -i 's|^device.name5=.*|device.name5=|' anykernel.sh
+          sed -i 's|^device.name3=.*|device.name3=lemon|' anykernel.sh
+          sed -i 's|^device.name4=.*|device.name4=pomelo|' anykernel.sh
+          sed -i 's|^device.name5=.*|device.name5=juice|' anykernel.sh
           sed -i 's|^block=.*|block=/dev/block/bootdevice/by-name/boot;|' anykernel.sh
-          sed -i 's|^BLOCK=.*|BLOCK=/dev/block/bootdevice/by-name/boot;|' anykernel.sh
-          grep -nE "^(kernel.string|device.name|block|BLOCK|do\.|is_slot_device|IS_SLOT_DEVICE)" anykernel.sh
+          sed -i 's|^is_slot_device=.*|is_slot_device=0;|' anykernel.sh
+          grep -nE "^(kernel.string|device.name|block|is_slot_device|do\.)" anykernel.sh
           zip -r9 ../Nugget-Kernel-citrus.zip . -x "*placeholder"
-          ls -lh ../Nugget-Kernel-citrus.zip
+          ls -lh ../Nugget-Kernel-citrus.zip ../out/arch/arm64/boot/Image.gz-dtb
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -73,4 +86,4 @@ jobs:
           path: |
             Nugget-Kernel-citrus.zip
             out/arch/arm64/boot/Image*
-            out/arch/arm64/boot/dts/vendor/qcom/*.dtb
+            build.log
