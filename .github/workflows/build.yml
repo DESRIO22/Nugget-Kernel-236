@@ -42,8 +42,9 @@ jobs:
           set -eo pipefail
           export PATH="$HOME/clang/bin:$PATH"
           export ARCH=arm64
+          export KCFLAGS="-Wno-error -Wno-error=incompatible-function-pointer-types -Wno-incompatible-function-pointer-types"
           test -f prebuilt/dtbo.img || { echo "prebuilt/dtbo.img NOT FOUND"; exit 1; }
-          ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- DTC_FLAGS=-f KCFLAGS=-Wno-error"
+          ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- DTC_FLAGS=-f"
           DEF=arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}
           sed -i '/CONFIG_LITTLE_CPU_MASK/d;/CONFIG_BIG_CPU_MASK/d' "$DEF"
           printf 'CONFIG_LITTLE_CPU_MASK=0\nCONFIG_BIG_CPU_MASK=0\n' >> "$DEF"
