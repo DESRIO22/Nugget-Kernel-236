@@ -80,20 +80,52 @@ jobs:
           set -eo pipefail
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
           cd ak3
-          rm -rf .git .github README.md
+          rm -rf .git .github README.md anykernel.sh
           cp ../out/arch/arm64/boot/Image.gz .
           cp ../prebuilt/dtbo.img .
-          sed -i 's|^kernel.string=.*|kernel.string=Nugget-Kernel-236|' anykernel.sh
-          sed -i 's|^device.name1=.*|device.name1=citrus|' anykernel.sh
-          sed -i 's|^device.name2=.*|device.name2=lime|' anykernel.sh
-          sed -i 's|^device.name3=.*|device.name3=lemon|' anykernel.sh
-          sed -i 's|^device.name4=.*|device.name4=pomelo|' anykernel.sh
-          sed -i 's|^device.name5=.*|device.name5=juice|' anykernel.sh
-          sed -i 's|^block=.*|block=/dev/block/bootdevice/by-name/boot;|' anykernel.sh
-          sed -i 's|^is_slot_device=.*|is_slot_device=0;|' anykernel.sh
-          grep -nE "^(kernel.string|device.name|block|is_slot_device|do\.)" anykernel.sh
+          cat > anykernel.sh <<'EOF'
+          # AnyKernel3 Ramdisk Mod Script
+          ## AnyKernel setup
+          # begin properties
+          properties() { '
+          kernel.string=Nugget-Kernel-236
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=0
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=citrus
+          device.name2=lime
+          device.name3=lemon
+          device.name4=pomelo
+          device.name5=juice
+          supported.versions=11.0 - 12.0
+          supported.patchlevels=
+          '; } # end properties
+
+          # shell variables
+          block=/dev/block/bootdevice/by-name/boot;
+          is_slot_device=0;
+          ramdisk_compression=auto;
+
+          ## AnyKernel methods (DO NOT CHANGE)
+          . tools/ak3-core.sh;
+
+          ## AnyKernel file attributes
+          set_perm_recursive 0 0 755 644 $ramdisk/*;
+          set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
+
+          ui_print "Nugget-Kernel-236 / Poco M3 (citrus)";
+
+          dump_boot;
+          write_boot;
+          flash_generic dtbo;
+          EOF
+          grep -q "omap" anykernel.sh && { echo "omap path still in anykernel.sh"; exit 1; } || true
+          grep -nE "^(block|is_slot_device|device.name|kernel.string)" anykernel.sh
           zip -r9 ../Nugget-Kernel-citrus.zip . -x "*placeholder"
-          ls -lh ../Nugget-Kernel-citrus.zip ../out/arch/arm64/boot/Image.gz
+          unzip -l ../Nugget-Kernel-citrus.zip | grep -E "Image.gz|dtbo.img|anykernel.sh|ak3-core"
+          ls -lh ../Nugget-Kernel-citrus.zip
 
       - uses: actions/upload-artifact@v4
         if: always()
